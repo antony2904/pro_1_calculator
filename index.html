@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phone Calculator</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+        }
+
+        .calculator {
+            background-color: #000;
+            width: 320px;
+            border-radius: 40px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .display {
+            color: white;
+            font-size: 60px;
+            text-align: right;
+            padding: 20px 10px;
+            word-wrap: break-word;
+            min-height: 120px;
+            display: flex;
+            align-items: flex-end;
+            justify-content: flex-end;
+        }
+
+        .buttons {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+
+        button {
+            border: none;
+            border-radius: 50%;
+            height: 65px;
+            width: 65px;
+            font-size: 28px;
+            cursor: pointer;
+            transition: filter 0.2s;
+        }
+
+        button:active {
+            filter: brightness(1.5);
+        }
+
+        .btn-gray {
+            background-color: #a5a5a5;
+            color: black;
+        }
+
+        .btn-dark {
+            background-color: #333333;
+            color: white;
+        }
+
+        .btn-orange {
+            background-color: #ff9f0a;
+            color: white;
+            font-size: 32px;
+        }
+
+        .zero {
+            grid-column: span 2;
+            width: 100%;
+            border-radius: 35px;
+            text-align: left;
+            padding-left: 25px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="calculator">
+    <div class="display" id="display">0</div>
+    <div class="buttons">
+        <button class="btn-gray" onclick="clearDisplay()">AC</button>
+        <button class="btn-gray" onclick="appendDecimal()">.</button>
+        <button class="btn-gray" onclick="setOperator('%')">%</button> <!-- Optional: map to /100 backend or leave unmapped -->
+        <button class="btn-orange" onclick="setOperator('/')">÷</button>
+
+        <button class="btn-dark" onclick="appendNumber(7)">7</button>
+        <button class="btn-dark" onclick="appendNumber(8)">8</button>
+        <button class="btn-dark" onclick="appendNumber(9)">9</button>
+        <button class="btn-orange" onclick="setOperator('*')">×</button>
+
+        <button class="btn-dark" onclick="appendNumber(4)">4</button>
+        <button class="btn-dark" onclick="appendNumber(5)">5</button>
+        <button class="btn-dark" onclick="appendNumber(6)">6</button>
+        <button class="btn-orange" onclick="setOperator('-')">−</button>
+
+        <button class="btn-dark" onclick="appendNumber(1)">1</button>
+        <button class="btn-dark" onclick="appendNumber(2)">2</button>
+        <button class="btn-dark" onclick="appendNumber(3)">3</button>
+        <button class="btn-orange" onclick="setOperator('+')">+</button>
+
+        <button class="btn-dark zero" onclick="appendNumber(0)">0</button>
+        <button class="btn-dark" onclick="appendDecimal()">.</button> <!-- Duplicate for layout -->
+        <button class="btn-orange" onclick="calculate()">=</button>
+    </div>
+</div>
+
+<script>
+    let currentInput = '0';
+    let previousInput = null;
+    let operator = null;
+    let awaitNextInput = false;
+    
+    // Set this to your FastAPI server's URL (default is http://127.0.0.1:8000)
+    const API_URL = 'http://127.0.0.1:8000/calculate';
+
+    const displayElement = document.getElementById('display');
+
+    function updateDisplay() {
+        // Simple formatting to avoid overflowing the screen with long decimals
+        if (currentInput.length > 9) {
+            displayElement.innerText = parseFloat(currentInput).toPrecision(9).replace(/(?:\.0+|(\.\d+?)0+)$/, "$1");
+        } else {
+            displayElement.innerText = currentInput;
+        }
+    }
+
+    function appendNumber(num) {
+        if (currentInput === '0' || awaitNextInput) {
+            currentInput = num.toString();
+            awaitNextInput = false;
+        } else {
+            currentInput += num.toString();
+        }
+        updateDisplay();
+    }
+
+    function appendDecimal() {
+        if (awaitNextInput) {
+            currentInput = '0.';
+            awaitNextInput = false;
+        } else if (!currentInput.includes('.')) {
+            currentInput += '.';
+        }
+        updateDisplay();
+    }
+
+    function setOperator(op) {
+        if (operator && !awaitNextInput) {
+            calculate().then(() => {
+                operator = op;
+                previousInput = currentInput;
+                awaitNextInput = true;
+            });
+            return;
+        }
+        operator = op;
+        previousInput = currentInput;
+        awaitNextInput = true;
+    }
+
+    function clearDisplay() {
+        currentInput = '0';
+        previousInput = null;
+        operator = null;
+        awaitNextInput = false;
+        updateDisplay();
+    }
+
+    async function calculate() {
+        if (operator === null || previousInput === null || awaitNextInput) return;
+
+        const payload = {
+            x: parseFloat(previousInput),
+            y: parseFloat(currentInput),
+            operator: operator
+        };
+
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                currentInput = 'Error';
+                console.error(data.detail);
+            } else {
+                currentInput = data.result.toString();
+            }
+        } catch (error) {
+            currentInput = 'Error';
+            console.error("API call failed:", error);
+        }
+
+        operator = null;
+        previousInput = null;
+        awaitNextInput = true;
+        updateDisplay();
+    }
+</script>
+</body>
+</html>
